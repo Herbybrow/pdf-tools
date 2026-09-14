@@ -1,0 +1,20 @@
+services:
+  backend:
+    build:
+      context: ./backend
+    ports:
+      - "8000:8000"
+    environment:
+      CORS_ORIGINS: "http://localhost:3000"
+      NSSF_MAX_UPLOAD_MB: "200"
+    volumes:
+      - backend-tmp:/app/tmp
+    # Docker's default /dev/shm is 64MB, which Chromium (used for HTML to PDF) can
+    # exhaust and crash under. --ipc=host is the fix quoted most often, but it shares the
+    # whole host IPC namespace, a broader trade than this actually needs; a bigger shared
+    # memory segment alone is enough.
+    shm_size: "1gb"
+    restart: unless-stopped
+
+volumes:
+  backend-tmp:

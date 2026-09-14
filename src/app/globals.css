@@ -1,0 +1,63 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --background: #f3f4f6;
+  --foreground: #111827;
+  --header-maroon: #902d30;
+  --header-gold: #f9c000;
+  --header-active: #d61f26;
+  --sans: "Inter", system-ui, "Segoe UI", Roboto, sans-serif;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-maroon: var(--header-maroon);
+  --color-gold: var(--header-gold);
+  --color-nav-active: var(--header-active);
+  --font-sans: var(--font-inter), var(--sans);
+  --animate-fade-in-up: fade-in-up 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* A brief, understated entrance for tool page headers -- quick and non-bouncy, matching
+   the rest of the site's restrained, official tone rather than a playful/consumer feel. */
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-in-up {
+    animation: none;
+  }
+}
+
+.dark {
+  --background: #111827;
+  --foreground: #e5e7eb;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-inter), var(--sans);
+  font-size: 16px;
+  line-height: 1.5;
+  letter-spacing: 0.18px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
