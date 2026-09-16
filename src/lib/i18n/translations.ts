@@ -2,8 +2,6 @@ export type Language = "en" | "sw";
 
 export const TRANSLATIONS = {
   en: {
-    "home.titleAccent": "Every PDF Tool",
-    "home.title": "You Need, In One Place",
     "nav.mergePdf": "Merge PDF",
     "nav.splitPdf": "Split PDF",
     "nav.compressPdf": "Compress PDF",

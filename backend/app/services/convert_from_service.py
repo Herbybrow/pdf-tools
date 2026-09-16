@@ -1,4 +1,6 @@
 import io
+import logging
+import time
 
 import pdfplumber
 import pymupdf
@@ -14,15 +16,11 @@ from app.core.subprocess_utils import run_cli
 from app.core.tempfiles import temp_workspace
 from app.services.optimize_service import ocr_pdf
 
+logger = logging.getLogger("nssf.conversion")
 _EMU_PER_POINT = 12700
 
 
 def _order_blocks_by_reading_order(blocks: list[tuple], page_width: float) -> list[tuple]:
-    """Reorders text blocks for multi-column layouts: detects a vertical gutter (a band
-    with no block straddling it) near the horizontal center, splits blocks into left/
-    right columns when one exists, and orders left-column-top-to-bottom then
-    right-column-top-to-bottom. Falls back to simple top-to-bottom/left-to-right when no
-    clean gutter is found (the common single-column case)."""
     if len(blocks) < 2:
         return blocks
 
@@ -45,12 +43,10 @@ def _order_blocks_by_reading_order(blocks: list[tuple], page_width: float) -> li
 
 
 def _infer_alignment(x0: float, x1: float, column_left: float, column_right: float) -> PP_ALIGN:
-    """Heuristic: a block's horizontal position within its column implies its alignment
-    -- PDFs don't expose paragraph alignment directly, only the resulting coordinates."""
     column_width = column_right - column_left
     block_width = x1 - x0
     if block_width > column_width * 0.75:
-        return PP_ALIGN.LEFT  # spans most of the column -- alignment isn't meaningfully distinguishable
+        return PP_ALIGN.LEFT
     left_margin = x0 - column_left
     right_margin = column_right - x1
     if abs(left_margin - right_margin) < 12:
@@ -61,6 +57,7 @@ def _infer_alignment(x0: float, x1: float, column_left: float, column_right: flo
 
 
 def pdf_to_word(data: bytes, ocr_scanned: bool = False) -> bytes:
+    t0 = time.perf_counter()
     source = ocr_pdf(data, "eng") if ocr_scanned else data
     with temp_workspace() as workspace:
         input_path = workspace / "input.pdf"
@@ -73,13 +70,13 @@ def pdf_to_word(data: bytes, ocr_scanned: bool = False) -> bytes:
             converter.close()
         if not output_path.exists():
             raise RuntimeError("Conversion did not produce a Word document.")
-        return output_path.read_bytes()
+        out = output_path.read_bytes()
+        logger.info(f"[TIMING] pdf_to_word executed in {time.perf_counter() - t0:.2f}s")
+        return out
 
 
 def pdf_to_powerpoint(data: bytes) -> bytes:
-    """Reconstructs one slide per PDF page: text blocks become editable text boxes,
-    embedded images become picture shapes, positioned to match the original layout.
-    This is a structural reconstruction, not a pixel-perfect copy of the source PDF."""
+    t0 = time.perf_counter()
     doc = pymupdf.open(stream=data, filetype="pdf")
     try:
         if doc.page_count == 0:
@@ -138,6 +135,7 @@ def pdf_to_powerpoint(data: bytes) -> bytes:
 
         buffer = io.BytesIO()
         presentation.save(buffer)
+        logger.info(f"[TIMING] pdf_to_powerpoint executed in {time.perf_counter() - t0:.2f}s")
         return buffer.getvalue()
     finally:
         doc.close()
@@ -151,25 +149,11 @@ _TEXT_TABLE_STRATEGY = {
 
 
 def _looks_like_real_table(tables: list[list[list[str | None]]]) -> bool:
-    """The text-alignment fallback strategy (no ruling lines to go on, just column gaps)
-    false-positives on ordinary prose surprisingly often -- e.g. a short paragraph of
-    left-aligned lines gets read as a lopsided one-column "table", fragmenting readable
-    sentences into single-word cells. A genuine table has at least one row with 2+
-    columns; anything that never manages that is almost certainly a misread paragraph,
-    so it's better to fall through to the plain-text dump instead."""
     return any(len(row) >= 2 for table in tables for row in table)
 
 
 def pdf_to_excel(data: bytes, pages_spec: str | None = None, ocr_scanned: bool = False) -> bytes:
-    """Detects tables per page via pdfplumber: first the default ruled/bordered-line
-    strategy, then -- for pages with no ruling lines -- a text-alignment-based strategy
-    that catches borderless tables (common in reports/invoices) by reading column gaps
-    instead of drawn lines. Falls back to a plain text dump only if neither finds
-    anything, so the tool still produces something useful.
-
-    Scanned/image-only pages have no extractable text at all -- pdfplumber (unlike the
-    OCR'd path) can't read pixels -- so `ocr_scanned=True` runs the page through Tesseract
-    first (mirroring pdf_to_word's `ocr_scanned` option) before table/text extraction."""
+    t0 = time.perf_counter()
     source = ocr_pdf(data, "eng") if ocr_scanned else data
     workbook = Workbook()
     workbook.remove(workbook.active)
@@ -211,7 +195,7 @@ def pdf_to_excel(data: bytes, pages_spec: str | None = None, ocr_scanned: bool =
                     )
                 raise ValueError(
                     "This PDF has no selectable text on the selected pages (it looks like a scanned "
-                    "image). Enable \"Scanned document (use OCR)\" and try again."
+                    'image). Enable "Scanned document (use OCR)" and try again.'
                 )
 
             sheet = workbook.create_sheet(title="Extracted Text")
@@ -220,6 +204,7 @@ def pdf_to_excel(data: bytes, pages_spec: str | None = None, ocr_scanned: bool =
 
     buffer = io.BytesIO()
     workbook.save(buffer)
+    logger.info(f"[TIMING] pdf_to_excel executed in {time.perf_counter() - t0:.2f}s")
     return buffer.getvalue()
 
 
@@ -229,6 +214,7 @@ def pdf_to_images(
     dpi: int = 150,
     extract_embedded_images: bool = False,
 ) -> dict[str, bytes]:
+    t0 = time.perf_counter()
     doc = pymupdf.open(stream=data, filetype="pdf")
     try:
         ext = "png" if image_format == "png" else "jpg"
@@ -248,6 +234,7 @@ def pdf_to_images(
                     counter += 1
             if not files:
                 raise ValueError("No embedded images were found in this PDF.")
+            logger.info(f"[TIMING] pdf_to_images (extract) executed in {time.perf_counter() - t0:.2f}s")
             return files
 
         zoom = dpi / 72
@@ -257,6 +244,7 @@ def pdf_to_images(
         for page_index in range(doc.page_count):
             pixmap = doc[page_index].get_pixmap(matrix=matrix)
             files[f"page_{str(page_index + 1).zfill(width)}.{ext}"] = pixmap.tobytes(ext)
+        logger.info(f"[TIMING] pdf_to_images executed in {time.perf_counter() - t0:.2f}s")
         return files
     finally:
         doc.close()
@@ -266,11 +254,7 @@ _PDFA_LEVELS = {"pdfa-1b": "1", "pdfa-2b": "2", "pdfa-3b": "3"}
 
 
 def pdf_to_pdfa(data: bytes, standard: str = "pdfa-2b") -> bytes:
-    """Ghostscript's -dPDFA flag only distinguishes PDF/A part (1/2/3), not the a/b/u
-    conformance sub-level -- "a" (fully accessible/tagged) requires a source document
-    that's already tagged with a structure tree, which Ghostscript's pdfwrite doesn't
-    synthesize from an untagged PDF. Advertising 1a/2a/3a options we can't actually
-    guarantee would be misleading, so only the "b" (basic) level of each part is offered."""
+    t0 = time.perf_counter()
     gs_path = find_ghostscript()
     if not gs_path:
         raise RuntimeError("Ghostscript is not installed.")
@@ -296,10 +280,13 @@ def pdf_to_pdfa(data: bytes, standard: str = "pdfa-2b") -> bytes:
         )
         if not output_path.exists():
             raise RuntimeError("Ghostscript could not produce a PDF/A output.")
-        return output_path.read_bytes()
+        out = output_path.read_bytes()
+        logger.info(f"[TIMING] pdf_to_pdfa executed in {time.perf_counter() - t0:.2f}s")
+        return out
 
 
 def pdf_to_markdown(data: bytes) -> bytes:
+    t0 = time.perf_counter()
     doc = pymupdf.open(stream=data, filetype="pdf")
     try:
         sizes: list[int] = []
@@ -340,6 +327,8 @@ def pdf_to_markdown(data: bytes) -> bytes:
                 else:
                     lines_out.append(text)
                 lines_out.append("")
-        return "\n".join(lines_out).encode("utf-8")
+        out = "\n".join(lines_out).encode("utf-8")
+        logger.info(f"[TIMING] pdf_to_markdown executed in {time.perf_counter() - t0:.2f}s")
+        return out
     finally:
         doc.close()

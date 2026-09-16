@@ -62,7 +62,7 @@ export function ToolsDropdownPanel({
                       onClick={onNavigate}
                       className={cn(
                         "group flex items-center gap-2.5 rounded-xl p-2 text-sm font-medium transition-all duration-200 hover:bg-maroon/5",
-                        item.popular ? "text-[color:var(--header-active)]" : "text-gray-800 hover:text-gray-950",
+                        item.popular ? "text-nav-active" : "text-gray-800 hover:text-gray-950",
                       )}
                       style={item.popular ? { color: HEADER_COLORS.active } : undefined}
                     >

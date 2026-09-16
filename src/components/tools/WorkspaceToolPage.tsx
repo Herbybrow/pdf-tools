@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import dynamic from "next/dynamic";
 import { CheckCircle2, FileText, Loader2, X } from "lucide-react";
 import { getCatalogTools } from "@/components/header";
 import type { ToolDefinition } from "@/lib/toolDefinitions";
@@ -9,14 +10,16 @@ import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { fetchOfficePreviewPdf, resultPreviewEndpointFor, sourcePreviewEndpointFor } from "@/lib/officePreview";
 import { isPreviewableBlob } from "@/lib/previewable";
 import { useToolSubmission } from "@/lib/useToolSubmission";
-import DocumentPreview from "./DocumentPreview";
 import FileDropzone from "./FileDropzone";
-import PasswordPromptModal from "./PasswordPromptModal";
-import PreviewModal from "./PreviewModal";
 import ToolOptionsForm from "./ToolOptionsForm";
 import ToolPageHeader from "./ToolPageHeader";
 import ToolResultPanel from "./ToolResultPanel";
-import WatermarkPreviewOverlay from "./WatermarkPreviewOverlay";
+
+// Dynamic imports to strip heavy PDF/canvas engines and modals from initial page load
+const DocumentPreview = dynamic(() => import("./DocumentPreview"), { ssr: false });
+const PasswordPromptModal = dynamic(() => import("./PasswordPromptModal"), { ssr: false });
+const PreviewModal = dynamic(() => import("./PreviewModal"), { ssr: false });
+const WatermarkPreviewOverlay = dynamic(() => import("./WatermarkPreviewOverlay"), { ssr: false });
 
 type WorkspaceToolPageProps = {
   definition: ToolDefinition;
@@ -38,12 +41,6 @@ function isPreviewableFile(file: File): boolean {
   return file.type === "application/pdf" || file.type.startsWith("image/");
 }
 
-/** Side-by-side "workspace" layout, piloted on a few tools before wider rollout:
- * a live document preview on the left, file info + options + actions on the right.
- * The preview automatically switches from the source file to the processed output
- * the moment it's ready, without navigating away or clearing the workspace. Built on
- * the same useToolSubmission hook as GenericToolPage, so behavior (password retry,
- * encrypted-PDF handling, reset semantics) is identical -- only the layout differs. */
 export default function WorkspaceToolPage({ definition, title, titleSw, description, descriptionSw }: WorkspaceToolPageProps) {
   const { t, language } = useLanguage();
   const isSw = language === "sw";
@@ -51,9 +48,6 @@ export default function WorkspaceToolPage({ definition, title, titleSw, descript
   const displayDescription = (isSw && descriptionSw) || description;
   const displaySubmitLabel = (isSw && definition.submitLabelSw) || definition.submitLabel;
   const displayHelperNote = (isSw && definition.helperNoteSw) || definition.helperNote;
-  // Looked up client-side rather than passed down from the (server) [slug]/page.tsx --
-  // a Lucide icon is a component reference, which can't cross the server->client props
-  // boundary, only plain serializable data can.
   const catalogEntry = getCatalogTools().find((tool) => tool.href === `/tools/${definition.slug}`);
 
   const {
@@ -80,16 +74,6 @@ export default function WorkspaceToolPage({ definition, title, titleSw, descript
 
   const primaryFile = files[0] ?? null;
 
-  // Word/PowerPoint/Excel files can't be rendered by pdf.js -- the only genuine preview
-  // for one is running it through the same LibreOffice conversion the real tool uses.
-  // These hold that rendered-for-preview PDF, tagged with the exact file/result it was
-  // generated for, separate from the main submission's `result`: a source-side preview
-  // (before the real conversion even runs) for tools like Word to PDF, and a result-side
-  // preview (after it runs) for tools like PDF to Word, whose *output* is the Office file
-  // that needs the same detour. Tagging (rather than clearing to null when the file/result
-  // changes) means the effects below only ever setState from their async callback, never
-  // synchronously in the effect body -- stale data is dropped by the read side simply not
-  // matching the tag, not by an eager reset racing the fetch it's supposed to precede.
   const [sourcePreview, setSourcePreview] = useState<{ file: File; pdf: Blob | null } | null>(null);
   const [resultPreview, setResultPreview] = useState<{ result: typeof result; pdf: Blob | null } | null>(null);
 
@@ -123,11 +107,6 @@ export default function WorkspaceToolPage({ definition, title, titleSw, descript
     };
   }, [resultPreviewEndpoint, result]);
 
-  // Preference order: the real result if the browser can show it directly, else that
-  // result rendered through the Office->PDF detour above; the source file if the browser
-  // can show it directly, else the source rendered through that same detour; otherwise
-  // nothing yet. Derived via useMemo (not a state+effect pair) so it's available
-  // synchronously on the same render as any of these change.
   const previewSource = useMemo<Blob | File | null>(() => {
     if (result) return isPreviewableBlob(result.blob) ? result.blob : resultPreviewPdf;
     if (primaryFile) return isPreviewableFile(primaryFile) ? primaryFile : sourcePreviewPdf;
@@ -143,9 +122,6 @@ export default function WorkspaceToolPage({ definition, title, titleSw, descript
     setFullscreenOpen(false);
   };
 
-  // Only meaningful when the output is genuinely smaller (Compress PDF's whole point) --
-  // for tools where size isn't the point (Protect PDF's encryption overhead, a format
-  // conversion), the output may be the same size or larger, so this just doesn't show.
   const sizeReductionPercent =
     status === "success" && result && primaryFile && result.blob.size < primaryFile.size
       ? Math.round((1 - result.blob.size / primaryFile.size) * 100)
@@ -176,39 +152,26 @@ export default function WorkspaceToolPage({ definition, title, titleSw, descript
               )}
             </>
           ) : status === "loading" ? (
-            // Genuinely in progress -- a spinner here (not just in the right-hand panel)
-            // means there's visible feedback in the one place someone's eyes are already
-            // on, instead of a static box that looks identical to "nothing is happening."
             <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center text-gray-400 dark:text-gray-500">
               <Loader2 className="h-10 w-10 animate-spin text-maroon" aria-hidden />
               <p className="max-w-xs text-sm">{t("workspace.converting")}</p>
             </div>
           ) : resultPreviewLoading ? (
-            // Output format the browser can't render directly (e.g. PDF to Word's .docx)
-            // -- running it back through LibreOffice to get something genuinely
-            // previewable, not just declaring it unpreviewable and stopping there.
             <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center text-gray-400 dark:text-gray-500">
               <Loader2 className="h-10 w-10 animate-spin text-maroon" aria-hidden />
               <p className="max-w-xs text-sm">{t("workspace.generatingPreview")}</p>
             </div>
           ) : status === "success" ? (
-            // The preview conversion above genuinely failed (a rare, real fallback -- not
-            // the common case, since resultPreviewLoading handles the normal path).
             <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center text-gray-400 dark:text-gray-500">
               <CheckCircle2 className="h-10 w-10 text-emerald-500" aria-hidden />
               <p className="max-w-xs text-sm">{t("workspace.doneNotPreviewable")}</p>
             </div>
           ) : sourcePreviewLoading ? (
-            // Source format the browser can't render directly (e.g. Word to PDF's .docx)
-            // -- same detour as above, run before the real conversion even starts.
             <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center text-gray-400 dark:text-gray-500">
               <Loader2 className="h-10 w-10 animate-spin text-maroon" aria-hidden />
               <p className="max-w-xs text-sm">{t("workspace.generatingPreview")}</p>
             </div>
           ) : (
-            // That preview conversion genuinely failed, or this source type has no
-            // Office->PDF detour available at all -- expected for some file types, not
-            // broken, so say so and point at the actual next step.
             <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center text-gray-400 dark:text-gray-500">
               <FileText className="h-12 w-12" aria-hidden />
               <p className="max-w-xs text-sm">
@@ -258,11 +221,6 @@ export default function WorkspaceToolPage({ definition, title, titleSw, descript
               <button
                 type="button"
                 disabled={!canSubmit}
-                // The auto-generated source preview (above) already ran this exact file
-                // through this exact LibreOffice conversion to produce something to show
-                // before the user ever clicked anything -- when it's ready, reuse those
-                // same bytes as the real result instead of paying the same 15+ second
-                // conversion cost again for output that would be identical.
                 onClick={() => (sourcePreviewEndpoint && sourcePreviewPdf ? submitFromCache(sourcePreviewPdf, definition.resultFilename) : submitWith())}
                 className="w-full rounded-xl bg-maroon px-5 py-3.5 text-sm font-bold text-white shadow-lg shadow-maroon/20 transition-all hover:bg-maroon/90 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-40"
               >

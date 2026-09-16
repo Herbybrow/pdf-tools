@@ -1,5 +1,7 @@
 import io
+import logging
 import threading
+import time
 
 import pillow_heif
 import pymupdf
@@ -11,20 +13,9 @@ from app.core.engines import find_libreoffice
 from app.core.subprocess_utils import run_cli
 from app.core.tempfiles import temp_workspace
 
+logger = logging.getLogger("nssf.conversion")
 pillow_heif.register_heif_opener()
 
-# LibreOffice's own startup cost (loading its framework, indexing fonts, initializing a
-# user profile) dominates a headless --convert-to call -- measured at ~15s with a fresh
-# profile directory each time vs. ~5s reusing one that's already been through that
-# one-time setup. A small fixed pool of persistent profile directories gets that reuse
-# for concurrent requests too, each protected by its own lock so no two conversions ever
-# touch the same profile at once (LibreOffice profiles use their own internal lock file
-# and refuse/misbehave under concurrent use, which is exactly what the previous
-# fresh-directory-per-call design existed to avoid -- a pool of N independently-locked
-# directories keeps that guarantee while still letting each one warm up after its first
-# use). When every pool slot is already busy, conversion falls back to a one-off
-# temporary profile directory -- slower, but exactly the previous, already-correct
-# behavior, so correctness is never traded away for speed.
 _LO_PROFILE_POOL_DIR = BACKEND_ROOT / "tmp" / "lo_profile_pool"
 _LO_PROFILE_POOL_SIZE = 3
 _lo_profile_locks = [threading.Lock() for _ in range(_LO_PROFILE_POOL_SIZE)]
@@ -47,6 +38,7 @@ class _PooledProfile:
         if self.index is not None:
             _lo_profile_locks[self.index].release()
 
+
 _PAGE_SIZES = {
     "a4": (595.28, 841.89),
     "letter": (612.0, 792.0),
@@ -61,6 +53,7 @@ def images_to_pdf(
     margin: str = "small",
     page_size: str = "a4",
 ) -> bytes:
+    t0 = time.perf_counter()
     margin_pt = _MARGINS_PT.get(margin, 36)
     result = pymupdf.open()
     for img_bytes in image_bytes_list:
@@ -91,6 +84,7 @@ def images_to_pdf(
 
     output = result.tobytes(garbage=4, deflate=True)
     result.close()
+    logger.info(f"[TIMING] images_to_pdf executed in {time.perf_counter() - t0:.2f}s")
     return output
 
 
@@ -98,28 +92,44 @@ def _convert_via_libreoffice(data: bytes, input_filename: str) -> bytes:
     soffice = find_libreoffice()
     if not soffice:
         raise RuntimeError("LibreOffice is not installed.")
+
+    t0 = time.perf_counter()
     safe_name = input_filename.replace("/", "_").replace("\\", "_")
+
     with temp_workspace() as workspace, _PooledProfile() as pooled_profile_dir:
         input_path = workspace / safe_name
         input_path.write_bytes(data)
         profile_dir = pooled_profile_dir or (workspace / "lo_profile").as_posix()
-        run_cli(
-            [
-                soffice,
-                "--headless",
-                "--norestore",
-                f"-env:UserInstallation=file:///{profile_dir}",
-                "--convert-to",
-                "pdf",
-                "--outdir",
-                str(workspace),
-                str(input_path),
-            ],
-        )
+
+        cmd = [
+            soffice,
+            "--headless",
+            "--invisible",
+            "--nologo",
+            "--nodefault",
+            "--nofirststartwizard",
+            "--norestore",
+            f"-env:UserInstallation=file:///{profile_dir}",
+            "--convert-to",
+            "pdf",
+            "--outdir",
+            str(workspace),
+            str(input_path),
+        ]
+
+        t_start = time.perf_counter()
+        run_cli(cmd)
+        t_exec = time.perf_counter() - t_start
+
         output_path = input_path.with_suffix(".pdf")
         if not output_path.exists():
             raise RuntimeError("LibreOffice did not produce a PDF output for this file.")
-        return output_path.read_bytes()
+
+        out_bytes = output_path.read_bytes()
+        logger.info(
+            f"[TIMING] {input_filename} -> LibreOffice Subprocess: {t_exec:.2f}s | Total: {time.perf_counter() - t0:.2f}s"
+        )
+        return out_bytes
 
 
 def word_to_pdf(data: bytes, filename: str) -> bytes:
@@ -142,6 +152,7 @@ def html_to_pdf(
     print_background: bool = True,
     margin: str = "small",
 ) -> bytes:
+    t0 = time.perf_counter()
     margin_css = _MARGIN_CSS.get(margin, "0.5in")
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch()
@@ -159,4 +170,5 @@ def html_to_pdf(
             )
         finally:
             browser.close()
+    logger.info(f"[TIMING] html_to_pdf executed in {time.perf_counter() - t0:.2f}s")
     return pdf_bytes

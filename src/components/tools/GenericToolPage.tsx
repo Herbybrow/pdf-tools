@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import dynamic from "next/dynamic";
 import { getCatalogTools } from "@/components/header";
 import type { ToolDefinition } from "@/lib/toolDefinitions";
 import { triggerDownload } from "@/lib/apiClient";
@@ -8,11 +9,13 @@ import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { isPreviewableBlob } from "@/lib/previewable";
 import { useToolSubmission } from "@/lib/useToolSubmission";
 import FileDropzone from "./FileDropzone";
-import PasswordPromptModal from "./PasswordPromptModal";
-import PreviewModal from "./PreviewModal";
 import ToolOptionsForm from "./ToolOptionsForm";
 import ToolPageHeader from "./ToolPageHeader";
 import ToolResultPanel from "./ToolResultPanel";
+
+// Dynamic imports for conditionally rendered modals
+const PasswordPromptModal = dynamic(() => import("./PasswordPromptModal"), { ssr: false });
+const PreviewModal = dynamic(() => import("./PreviewModal"), { ssr: false });
 
 type GenericToolPageProps = {
   definition: ToolDefinition;
@@ -25,9 +28,6 @@ type GenericToolPageProps = {
 export default function GenericToolPage({ definition, title, titleSw, description, descriptionSw }: GenericToolPageProps) {
   const { language } = useLanguage();
   const isSw = language === "sw";
-  // Looked up client-side rather than passed down from the (server) [slug]/page.tsx --
-  // a Lucide icon is a component reference, which can't cross the server->client props
-  // boundary, only plain serializable data can.
   const catalogEntry = getCatalogTools().find((tool) => tool.href === `/tools/${definition.slug}`);
   const displayTitle = (isSw && titleSw) || title;
   const displayDescription = (isSw && descriptionSw) || description;

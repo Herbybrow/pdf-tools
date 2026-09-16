@@ -192,7 +192,7 @@ function TypeTab({ onUse }: { onUse: (dataUrl: string) => void }) {
               type="button"
               key={font.id}
               onClick={() => setFontId(font.id)}
-              className={`flex min-h-[64px] items-center justify-center rounded-lg border px-3 py-2 ${
+              className={`flex min-h-16 items-center justify-center rounded-lg border px-3 py-2 ${
                 fontId === font.id ? "border-maroon bg-maroon/5" : "border-gray-200 dark:border-slate-600"
               }`}
             >

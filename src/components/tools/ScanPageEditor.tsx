@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
-import { applyTemperature } from "@/lib/imageProcessing";
 
 type FilterPreset = "none" | "bw" | "mono" | "sepia";
 type Adjustments = { brightness: number; contrast: number; saturation: number; hue: number; temperature: number };
@@ -62,7 +61,14 @@ export default function ScanPageEditor({ dataUrl, onSave, onCancel }: ScanPageEd
     ctx.filter = cssFilterString(preset, adjustments);
     ctx.drawImage(img, 0, 0, size.width, size.height);
     ctx.filter = "none";
-    if (adjustments.temperature !== 0) applyTemperature(canvas, adjustments.temperature);
+
+    if (adjustments.temperature !== 0) {
+      import("@/lib/imageProcessing").then(({ applyTemperature }) => {
+        if (previewCanvasRef.current === canvas) {
+          applyTemperature(canvas, adjustments.temperature);
+        }
+      });
+    }
   }, [size, preset, adjustments]);
 
   const resetAdjustments = () => setAdjustments(DEFAULT_ADJUSTMENTS);

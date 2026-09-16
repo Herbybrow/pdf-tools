@@ -40,7 +40,7 @@ export default function ToolResultPanel({
   if (status === "error") {
     return (
       <div className="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-4 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
-        <AlertTriangle className="mt-0.5 h-5 w-5 flex-shrink-0" />
+        <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
         <div className="flex-1">
           <p className="font-medium">{t("result.errorTitle")}</p>
           <p className="mt-1">{error}</p>
@@ -58,7 +58,7 @@ export default function ToolResultPanel({
 
   return (
     <div className="flex items-start gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-4 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-300">
-      <CheckCircle2 className="mt-0.5 h-5 w-5 flex-shrink-0" />
+      <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0" />
       <div className="flex-1">
         <p className="font-medium">
           {t("result.done")}

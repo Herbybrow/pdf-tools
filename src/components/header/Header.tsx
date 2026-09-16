@@ -107,7 +107,7 @@ export function TopBar({
   };
 
   return (
-    <div className="relative h-[60px]" style={{ backgroundColor: HEADER_COLORS.maroon }}>
+    <div className="relative h-15" style={{ backgroundColor: HEADER_COLORS.maroon }}>
       <div className="absolute left-4 top-0 z-50">
         <Link href="/" aria-label={logoAlt} className="block">
           <Image
@@ -116,7 +116,7 @@ export function TopBar({
             width={216}
             height={305}
             priority
-            className="mr-7 block h-[100px] w-auto max-w-none"
+            className="mr-7 block h-25 w-auto max-w-none"
             style={{
               height: "100px",
               boxShadow: "0 1px 4px rgba(0,0,0,.3), inset 0 0 40px rgba(0,0,0,.1)",
@@ -305,7 +305,7 @@ export function ToolsNavBar({
     const active = isItemActive(item);
     const className = cn(
       "inline-flex items-center gap-1 rounded-full px-2.5 py-1 font-sans text-xs font-bold uppercase tracking-wide transition-colors lg:text-sm",
-      active ? "bg-maroon text-white" : "text-gray-900 hover:bg-black/5 hover:text-[color:var(--header-active)]",
+      active ? "bg-maroon text-white" : "text-gray-900 hover:bg-black/5 hover:text-nav-active",
     );
 
     if (item.menu) {
@@ -347,7 +347,7 @@ export function ToolsNavBar({
   return (
     <nav
       ref={navRef}
-      className="relative z-40 flex h-[40px] items-center justify-between pl-28 pr-4 sm:pr-6"
+      className="relative z-40 flex h-10 items-center justify-between pl-28 pr-4 sm:pr-6"
       style={{ backgroundColor: HEADER_COLORS.gold }}
       aria-label="PDF tools"
     >
@@ -368,7 +368,7 @@ export function ToolsNavBar({
 
       <Link
         href={support.href}
-        className="inline-flex shrink-0 items-center gap-2 text-sm font-medium text-gray-900 hover:text-[color:var(--header-maroon)]"
+        className="inline-flex shrink-0 items-center gap-2 text-sm font-medium text-gray-900 hover:text-maroon"
       >
         <SupportIcon className="h-5 w-5 shrink-0" aria-hidden />
         <span>{t("nav.support")}</span>
@@ -480,7 +480,7 @@ export default function Header(props: HeaderProps = {}) {
   };
 
   return (
-    <header className="relative z-40 h-[100px] w-full overflow-visible font-sans shadow-md">
+    <header className="relative z-40 h-25 w-full overflow-visible font-sans shadow-md">
       <div className="flex flex-col">
         <TopBar title={brand.title} logoSrc={brand.logoSrc} logoAlt={brand.logoAlt} />
         <ToolsNavBar
